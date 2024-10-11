@@ -22,6 +22,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	time2 "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -46,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 const (
@@ -250,6 +252,35 @@ func validateDevices(field, cName string, o, n []specs.LinuxDevice) error {
 	return nil
 }
 
+func extractAnnotationsToValidate(o map[string]string) map[string]string {
+	const (
+		gvisorPrefix   = "dev.gvisor."
+		internalPrefix = "dev.gvisor.internal."
+
+		mntSrcAnnotation = "dev.gvisor.spec.mount.source"
+	)
+
+	n := make(map[string]string)
+	for key, val := range o {
+		if strings.HasPrefix(key, internalPrefix) || key == mntSrcAnnotation {
+			continue
+		}
+		if strings.HasPrefix(key, gvisorPrefix) {
+			n[key] = val
+		}
+	}
+	return n
+}
+
+func validateAnnotations(cName string, before, after map[string]string) error {
+	oldM := extractAnnotationsToValidate(before)
+	newM := extractAnnotationsToValidate(after)
+	if !reflect.DeepEqual(oldM, newM) {
+		return validateError("Annotations", cName, oldM, newM)
+	}
+	return nil
+}
+
 // validateArray performs a deep comparison of two arrays, checking for equality
 // at every level of nesting. Note that this method:
 // * does not allow duplicates in the arrays.
@@ -280,6 +311,29 @@ func validateArray[T any](field, cName string, oldArr, newArr []T) error {
 		return validateError(field, cName, oldArr, newArr)
 	}
 
+	return nil
+}
+
+func sortCapabilities(o *specs.LinuxCapabilities) {
+	sort.Strings(o.Bounding)
+	sort.Strings(o.Effective)
+	sort.Strings(o.Inheritable)
+	sort.Strings(o.Permitted)
+	sort.Strings(o.Ambient)
+}
+
+func validateCapabilities(field, cName string, oldCaps, newCaps *specs.LinuxCapabilities) error {
+	if oldCaps == nil && newCaps == nil {
+		return nil
+	}
+	if oldCaps == nil || newCaps == nil {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
+	sortCapabilities(oldCaps)
+	sortCapabilities(newCaps)
+	if !reflect.DeepEqual(oldCaps, newCaps) {
+		return validateError(field, cName, oldCaps, newCaps)
+	}
 	return nil
 }
 
@@ -324,6 +378,9 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 	if ok := slices.Equal(oldProcess.Args, newProcess.Args); !ok {
 		return validateError("Args", cName, oldProcess.Args, newProcess.Args)
 	}
+	if err := validateCapabilities("Capabilities", cName, oldProcess.Capabilities, newProcess.Capabilities); err != nil {
+		return err
+	}
 
 	// Validate specs.Linux.
 	if oldLinux.CgroupsPath != newLinux.CgroupsPath {
@@ -350,7 +407,11 @@ func validateSpecForContainer(oldSpec, newSpec *specs.Spec, cName string) error 
 		}
 	}
 
-	// TODO(b/359591006): Validate runsc version, Linux.Resources, Process.Capabilities and Annotations.
+	if err := validateAnnotations(cName, oldSpec.Annotations, newSpec.Annotations); err != nil {
+		return err
+	}
+
+	// TODO(b/359591006): Validate Linux.Resources.
 	// TODO(b/359591006): Check other remaining fields for equality.
 	return nil
 }
@@ -462,6 +523,12 @@ func (r *restorer) restore(l *Loader) error {
 	r.pagesFile = nil // transferred to loadOpts.Load()
 	if err != nil {
 		return err
+	}
+
+	checkpointVersion := popVersionFromCheckpoint(l.k)
+	currentVersion := version.Version()
+	if checkpointVersion != currentVersion {
+		return fmt.Errorf("runsc version does not match across checkpoint restore, checkpoint: %v current: %v", checkpointVersion, currentVersion)
 	}
 
 	oldSpecs, err := popContainerSpecsFromCheckpoint(l.k)
@@ -577,6 +644,9 @@ func (l *Loader) save(o *control.SaveOpts) (err error) {
 		o.Metadata = make(map[string]string)
 	}
 	o.Metadata["container_count"] = strconv.Itoa(l.containerCount())
+
+	// Save runsc version.
+	l.addVersionToCheckpoint()
 
 	// Save container specs.
 	l.addContainerSpecsToCheckpoint()
