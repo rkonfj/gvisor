@@ -1519,11 +1519,11 @@ rules_pkg_dependencies()
 # Version LTS 20220623.1
 http_archive(
     name = "com_google_absl",
-    sha256 = "a6be76f59c474a215f2df5116b312257462e97f2e38b2bfa6df8b6a55710b058",
-    strip_prefix = "abseil-cpp-8c0b94e793a66495e0b1f34a5eb26bd7dc672db0",
+    sha256 = "af0638f73e4452e22e295f8b3f452518234254104713a08497f3d3aaa76733ad",
+    strip_prefix = "abseil-cpp-20240722.0",
     urls = [
-        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/8c0b94e793a66495e0b1f34a5eb26bd7dc672db0.tar.gz",
-        "https://github.com/abseil/abseil-cpp/archive/8c0b94e793a66495e0b1f34a5eb26bd7dc672db0.tar.gz",
+        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz",
+        "https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz",
     ],
 )
 
