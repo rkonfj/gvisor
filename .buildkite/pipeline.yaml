@@ -65,5 +65,4 @@ steps:
   - <<: *common
     label: ":world_map: Build everything"
     commands:
-      - "make clean"
-      - "make build TARGETS='--build_tag_filters=-network_plugins //...'"
+      - "make build TARGETS='--verbose_failures --build_tag_filters=-network_plugins //...'"
