@@ -3654,6 +3654,10 @@ func TestLookupEROFS(t *testing.T) {
 	}
 }
 
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
 func TestSpecValidation(t *testing.T) {
 	// TODO(b/359591006): Add more tests.
 	tests := []struct {
@@ -3791,6 +3795,53 @@ func TestSpecValidation(t *testing.T) {
 				restoreSpec.Annotations["dev.gvisor.internal.foo"] = "bar"
 			},
 			wantErr: "",
+		},
+		{
+			name: "Capabilities",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Process = &specs.Process{
+					Capabilities: &specs.LinuxCapabilities{
+						Bounding: []string{
+							"CAP_NET_RAW",
+							"CAP_SYS_NICE",
+						},
+					},
+					Args: []string{"/bin/true"},
+				}
+				restoreSpec.Process = &specs.Process{
+					Capabilities: &specs.LinuxCapabilities{
+						Bounding: []string{
+							"CAP_NET_RAW",
+						},
+					},
+					Args: []string{"/bin/true"},
+				}
+			},
+			wantErr: "Capabilities does not match across checkpoint restore",
+		},
+		{
+			name: "Resources",
+			mutate: func(spec, restoreSpec *specs.Spec, _, _ string) {
+				spec.Linux = &specs.Linux{
+					Resources: &specs.LinuxResources{
+						Memory: &specs.LinuxMemory{
+							Limit:       int64Ptr(1),
+							Swap:        int64Ptr(2),
+							Reservation: int64Ptr(3),
+						},
+					},
+				}
+				restoreSpec.Linux = &specs.Linux{
+					Resources: &specs.LinuxResources{
+						Memory: &specs.LinuxMemory{
+							Limit:       int64Ptr(1),
+							Swap:        int64Ptr(2),
+							Reservation: int64Ptr(5),
+						},
+					},
+				}
+			},
+			wantErr: "Resources does not match across checkpoint restore",
 		},
 	}
 	for _, test := range tests {
